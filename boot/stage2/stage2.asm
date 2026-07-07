@@ -10,6 +10,8 @@ extern enable_a20
 extern detect_memory
 extern load_gdt
 extern vga_init
+extern pic_init
+extern pic_set_mask
 extern load_idt
 extern dbg_ok
 extern dbg_err
@@ -78,11 +80,22 @@ pm32_start:
 
     call vga_init           ; clear screen, reset cursor and color
 
-    ; Load IDT for exceptions 0-31 before enabling any further work.
-    ; sti is intentionally absent — the PIC is still in its BIOS default
-    ; mapping (IRQ0 → INT8 = #DF) and must be remapped before hardware
-    ; interrupts are unmasked.
+    ; Remap PIC before loading the IDT — ICW sequences leave the PIC in an
+    ; undefined mask state, so we remap first, then fill the IDT, then unmask.
+    mov al, 0x20            ; master IRQ0-7  → vectors 32-39
+    mov ah, 0x28            ; slave  IRQ8-15 → vectors 40-47
+    call pic_init
+
+    ; Install exception stubs (0-31) and IRQ stubs (32-47), load IDTR.
     call load_idt
+
+    ; Unmask all IRQs on both PICs, then enable CPU interrupt delivery.
+    ; Every IRQ has a handler (irq_common → pic_eoi → iret), so no vector
+    ; is left without a gate.
+    mov al, 0x00            ; master mask: all IRQs unmasked
+    mov ah, 0x00            ; slave  mask: all IRQs unmasked
+    call pic_set_mask
+    sti
 
     mov esi, msg32_banner
     call dbg_info
@@ -96,6 +109,12 @@ pm32_start:
     mov esi, msg32_idt
     call dbg_ok
 
+    mov esi, msg32_pic
+    call dbg_ok
+
+    mov esi, msg32_sti
+    call dbg_ok
+
 .hang:
     hlt
     jmp .hang
@@ -105,4 +124,6 @@ section .data
 msg32_banner: db "aOS | 32-bit Protected Mode", 0
 msg32_a20:    db "A20 line enabled", 0
 msg32_mem:    db "E820 memory map detected", 0
-msg32_idt:    db "IDT loaded (exceptions 0-31)", 0
+msg32_idt:    db "IDT loaded (vectors 0-47)", 0
+msg32_pic:    db "PIC remapped (IRQ0-7=0x20, IRQ8-15=0x28)", 0
+msg32_sti:    db "Interrupts enabled", 0
