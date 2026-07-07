@@ -8,10 +8,12 @@ OBJCOPY  := objcopy
 STAGE2_OBJS := \
     $(OBJ)/stage2.o      \
     $(OBJ)/a20.o         \
+    $(OBJ)/gdt.o         \
     $(OBJ)/memory.o      \
     $(OBJ)/memory_view.o \
     $(OBJ)/print.o       \
-    $(OBJ)/convert.o
+    $(OBJ)/convert.o     \
+    $(OBJ)/vga.o
 
 .PHONY: all run clean
 
@@ -32,6 +34,9 @@ $(OBJ)/stage2.o: boot/stage2/stage2.asm | $(OBJ)
 $(OBJ)/a20.o: boot/stage2/a20.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
+$(OBJ)/gdt.o: boot/stage2/gdt.asm | $(OBJ)
+	$(NASM) -f elf32 $< -o $@
+
 $(OBJ)/memory.o: boot/stage2/memory.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
@@ -42,6 +47,9 @@ $(OBJ)/print.o: boot/lib/print.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(OBJ)/convert.o: boot/lib/convert.asm | $(OBJ)
+	$(NASM) -f elf32 $< -o $@
+
+$(OBJ)/vga.o: boot/lib/vga.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(BUILD)/stage2.elf: $(STAGE2_OBJS) boot/linker/stage2.ld
