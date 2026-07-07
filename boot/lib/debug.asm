@@ -11,6 +11,7 @@ global dbg_hex8
 global dbg_hex16
 global dbg_hex32
 global dbg_dump_regs
+global dbg_dump_frame
 global dbg_panic
 
 extern vga_putchar
@@ -131,20 +132,25 @@ dbg_hex32:
 
 
 ; ─── Register dump ───────────────────────────────────────────────────────────
+
+; Print registers from a pushad save area addressed by EBP.
 ;
-; Prints all general-purpose registers in a two-column layout.
-; Uses EBP as a stable frame pointer into the pushad save area so that nested
-; calls to dbg_hex32 / vga_* don't disturb the offsets.
+; This is the shared core used by both dbg_dump_regs (normal call) and
+; isr_common (exception frame) so each shows the register values that were
+; live at the moment of interest, not after further setup.
 ;
-; Stack layout after pushad (relative to EBP = ESP after pushad):
+; Input:  EBP = pointer to pushad save area with the layout:
 ;   [ebp+ 0] EDI    [ebp+ 4] ESI
-;   [ebp+ 8] EBP    [ebp+12] ESP  (value before pushad, i.e. after CALL)
+;   [ebp+ 8] EBP    [ebp+12] ESP  (value at time of pushad)
 ;   [ebp+16] EBX    [ebp+20] EDX
 ;   [ebp+24] ECX    [ebp+28] EAX
+;
+; Clobbers: EBP (consumed as input, not restored).  EAX and ESI are saved.
+; All other registers are unchanged.
 
-dbg_dump_regs:
-    pushad
-    mov ebp, esp
+dbg_dump_frame:
+    push eax
+    push esi
 
     mov al, DBG_ATTR_DUMP
     call vga_set_attr
@@ -190,7 +196,7 @@ dbg_dump_regs:
     call dbg_hex32
     call vga_newline
 
-    ; EBP  ESP (adjusted to caller's value before the CALL instruction)
+    ; EBP  ESP
     mov esi, str_ebp
     call vga_print_string
     mov eax, [ebp+8]
@@ -200,13 +206,23 @@ dbg_dump_regs:
     mov esi, str_esp
     call vga_print_string
     mov eax, [ebp+12]
-    add eax, 4              ; saved ESP is after CALL pushed retaddr; +4 = caller's ESP
     call dbg_hex32
     call vga_newline
 
     mov al, DBG_ATTR_NORMAL
     call vga_set_attr
 
+    pop esi
+    pop eax
+    ret
+
+
+; Dump all general-purpose registers to the screen.
+; Saves and restores all registers.
+dbg_dump_regs:
+    pushad
+    mov ebp, esp
+    call dbg_dump_frame
     popad
     ret
 

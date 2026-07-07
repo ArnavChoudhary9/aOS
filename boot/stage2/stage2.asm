@@ -10,6 +10,7 @@ extern enable_a20
 extern detect_memory
 extern load_gdt
 extern vga_init
+extern load_idt
 extern dbg_ok
 extern dbg_err
 extern dbg_info
@@ -77,6 +78,12 @@ pm32_start:
 
     call vga_init           ; clear screen, reset cursor and color
 
+    ; Load IDT for exceptions 0-31 before enabling any further work.
+    ; sti is intentionally absent — the PIC is still in its BIOS default
+    ; mapping (IRQ0 → INT8 = #DF) and must be remapped before hardware
+    ; interrupts are unmasked.
+    call load_idt
+
     mov esi, msg32_banner
     call dbg_info
 
@@ -84,6 +91,9 @@ pm32_start:
     call dbg_ok
 
     mov esi, msg32_mem
+    call dbg_ok
+
+    mov esi, msg32_idt
     call dbg_ok
 
 .hang:
@@ -95,3 +105,4 @@ section .data
 msg32_banner: db "aOS | 32-bit Protected Mode", 0
 msg32_a20:    db "A20 line enabled", 0
 msg32_mem:    db "E820 memory map detected", 0
+msg32_idt:    db "IDT loaded (exceptions 0-31)", 0

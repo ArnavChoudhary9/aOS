@@ -9,6 +9,7 @@ STAGE2_OBJS := \
     $(OBJ)/stage2.o      \
     $(OBJ)/a20.o         \
     $(OBJ)/gdt.o         \
+    $(OBJ)/idt.o         \
     $(OBJ)/memory.o      \
     $(OBJ)/memory_view.o \
     $(OBJ)/print.o       \
@@ -36,6 +37,9 @@ $(OBJ)/a20.o: boot/stage2/a20.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(OBJ)/gdt.o: boot/stage2/gdt.asm | $(OBJ)
+	$(NASM) -f elf32 $< -o $@
+
+$(OBJ)/idt.o: boot/stage2/idt.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(OBJ)/memory.o: boot/stage2/memory.asm | $(OBJ)
