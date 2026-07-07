@@ -1,63 +1,101 @@
 bits 16
 org 0x7c00
 
+STAGE2_SEGMENT  equ 0x0000
+STAGE2_OFFSET   equ 0x8000
+STAGE2_SECTORS  equ 16
+STAGE2_CYLINDER equ 0
+STAGE2_SECTOR   equ 2
+STAGE2_HEAD     equ 0
+
 start:
-    ; Blocks interrupts, so we can setup the stack without being interrupted
-    ; Intrupts before the stack is setup can cause a crash, so we block them until the stack is setup
     cli
 
-    xor ax, ax ; Clear AX
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0x7c00
 
-    ; Zero out the data segment registers
-    mov ds, ax ; Data Segment
-    mov es, ax ; Extra Segment
-    mov ss, ax ; Stack Segment
+    mov [boot_drive], dl
 
-    ; Setup the stack pointer
-    mov sp, 0x7c00 ; Set the stack pointer to the top of the bootloader area
-
-    mov [boot_drive], dl ; Store the boot drive number passed by BIOS into boot_drive
+    call print_newline
+    mov si, msg_welcome
+    call print_line
 
     call load_stage2
-    jc disk_error ; If there was an error loading stage 2, jump to disk_error
+    jc .disk_error
 
-    jmp 0x0000:0x8000 ; Jump to the start of stage 2
+    jmp STAGE2_SEGMENT:STAGE2_OFFSET
 
-load_stage2:
-    ; Load stage 2 of the bootloader from disk into memory at 0x8000
-    mov ax, 0x0000 ; Clear AX register
-    mov es, ax     ; Set ES to 0x0000 (segment for loading stage 2)
-    mov bx, 0x8000 ; Set BX to 0x8000
-
-    mov ah, 0x02 ; BIOS function to read sectors from disk
-    mov al, 4    ; Number of sectors to read (4 sectors for stage 2)
-   
-    mov ch, 0    ; Cylinder number (0 for the first cylinder)
-    mov cl, 2    ; Sector number (2 for the second sector, as stage 1 is in sector 1)
-    
-    mov dh, 0    ; Head number (0 for the first head)
-    mov dl, [boot_drive] ; Drive number passed by BIOS
-    
-    int 0x13      ; Call BIOS interrupt
-    ret
-
-disk_error:
-    mov si, disk_error_msg
-    call print_string
-
-    jmp hang
+.disk_error:
+    mov si, msg_disk_error
+    call print_line
 
 hang:
     hlt
     jmp hang
 
-%include "boot/include/print.inc"
+load_stage2:
+    mov ax, STAGE2_SEGMENT
+    mov es, ax
+    mov bx, STAGE2_OFFSET
 
-boot_drive:
-    db 0x00 ; Placeholder for the boot drive number, will be filled by BIOS
+    mov ah, 0x02
+    mov al, STAGE2_SECTORS
+    mov ch, STAGE2_CYLINDER
+    mov cl, STAGE2_SECTOR
+    mov dh, STAGE2_HEAD
+    mov dl, [boot_drive]
 
-disk_error_msg:
-    db "Disk read error. Please check the disk and try again.", 0
+    int 0x13
+    ret
+
+; ------------------------------------------------------------------
+; Minimal print routines — inlined to keep stage 1 self-contained.
+; The full print library lives in boot/lib/print.asm (stage 2 only).
+; ------------------------------------------------------------------
+
+print_char:
+    push ax
+    mov ah, 0x0e
+    int 0x10
+    pop ax
+    ret
+
+print_newline:
+    mov al, 0x0d
+    call print_char
+    mov al, 0x0a
+    call print_char
+    ret
+
+print_string:
+    push ax
+    push si
+.loop:
+    mov al, [si]
+    cmp al, 0
+    je .done
+    call print_char
+    inc si
+    jmp .loop
+.done:
+    pop si
+    pop ax
+    ret
+
+print_line:
+    call print_string
+    call print_newline
+    ret
+
+; ------------------------------------------------------------------
+
+boot_drive:     db 0
+
+msg_welcome:    db "aOS Stage 1", 0
+msg_disk_error: db "Disk read error!", 0
 
 times 510-($-$$) db 0
-dw 0xaa55 ; Boot signature
+dw 0xaa55
