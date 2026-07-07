@@ -9,6 +9,9 @@ global print_hex16
 global print_hex32
 global print_hex64_mem
 global dump_memory
+global print_ok
+global print_err
+global print_info
 
 extern hex_to_ascii
 
@@ -214,3 +217,37 @@ dump_memory:
     pop bx
     pop ax
     ret
+
+
+; Print "[OK]  " prefix then SI message + newline.
+print_ok:
+    push si
+    mov si, str16_ok
+    call print_string
+    pop si
+    call print_line
+    ret
+
+; Print "[ERR] " prefix then SI message + newline.
+print_err:
+    push si
+    mov si, str16_err
+    call print_string
+    pop si
+    call print_line
+    ret
+
+; Print "[..] " prefix then SI message + newline.
+print_info:
+    push si
+    mov si, str16_info
+    call print_string
+    pop si
+    call print_line
+    ret
+
+section .data
+
+str16_ok:   db "[OK]  ", 0
+str16_err:  db "[ERR] ", 0
+str16_info: db "[..] ", 0

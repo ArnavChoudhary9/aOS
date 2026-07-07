@@ -13,7 +13,8 @@ STAGE2_OBJS := \
     $(OBJ)/memory_view.o \
     $(OBJ)/print.o       \
     $(OBJ)/convert.o     \
-    $(OBJ)/vga.o
+    $(OBJ)/vga.o         \
+    $(OBJ)/debug.o
 
 .PHONY: all run clean
 
@@ -50,6 +51,9 @@ $(OBJ)/convert.o: boot/lib/convert.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(OBJ)/vga.o: boot/lib/vga.asm | $(OBJ)
+	$(NASM) -f elf32 $< -o $@
+
+$(OBJ)/debug.o: boot/lib/debug.asm | $(OBJ)
 	$(NASM) -f elf32 $< -o $@
 
 $(BUILD)/stage2.elf: $(STAGE2_OBJS) boot/linker/stage2.ld
