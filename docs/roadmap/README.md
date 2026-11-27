@@ -11,7 +11,7 @@ This folder breaks [the design](../design.md) into small phases. Agents carry th
 3. Build only what the phase file lists. Anything under **Out of scope** stays out, even if it looks easy. If the phase can't be done as written, stop and write up why instead of redesigning it.
 4. Meet the **Definition of done** below.
 5. Write the explainer note `docs/phases/<id>.md`.
-6. Update the status table below (`in review`). Open a PR to `main` whose body contains the gate output and the phase's manual checklist.
+6. Update the status table below (`in review`) and the root `README.md` (see Definition of done, item 6). Open a PR to `main` whose body contains the gate output and the phase's manual checklist.
 
 A phase should be roughly 300–800 lines of code. If it is growing much larger, split it and note the split in the PR.
 
@@ -26,6 +26,11 @@ A phase should be roughly 300–800 lines of code. If it is growing much larger,
    - No new external crate without a line in the PR saying why. Pin its version, or its git rev for git dependencies.
    - Any decision the phase changes is recorded in the design doc's Decision log.
 5. The status table below is updated.
+6. The root [README.md](../../README.md) is updated so it always tells a human how to build and run the latest phase:
+   - **Current status**: the phase link and what now works.
+   - **What you should see**: the exact output of `cargo xtask run` for this phase.
+   - **Prerequisites** and **Commands**: any new host tools, xtask commands or flags.
+   - **Repository layout**: when new top-level directories appear.
 
 ## Gates
 
