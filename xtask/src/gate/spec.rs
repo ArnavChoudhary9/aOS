@@ -5,12 +5,16 @@
 //! cmdline = "log=debug"          # extra kernel cmdline (`gate` is always added)
 //! stream  = "com1"               # which serial port to match: com1 | com2 (default)
 //! timeout = "20s"                # whole run, e.g. 500ms, 20s, 2m (default 30s)
+//! expect_exit = "failure"        # success (default) | failure, the guest's QEMU exit
 //!
 //! [kernel]
 //! features = ["test-panic"]      # kernel cargo features for this boot
 //!
 //! [[expect]]                     # regexes matched in order, one line each
 //! re = 'aOS kernel .* base=0x[0-9a-f]+'
+//!
+//! [[reject]]                     # any line matching one of these fails the gate
+//! re = 'INFO'
 //! ```
 //!
 //! Unknown fields are errors, so a typo fails loudly instead of being ignored.
@@ -40,6 +44,27 @@ impl Stream {
     }
 }
 
+/// The exit status the guest must report through isa-debug-exit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ExpectExit {
+    /// `QemuExit::Success`, QEMU status 33.
+    #[default]
+    Success,
+    /// `QemuExit::Failure`, QEMU status 35 (e.g. a deliberate panic).
+    Failure,
+}
+
+impl ExpectExit {
+    /// The QEMU process exit status this corresponds to.
+    pub fn qemu_status(self) -> i32 {
+        match self {
+            ExpectExit::Success => (0x10 << 1) | 1,
+            ExpectExit::Failure => (0x11 << 1) | 1,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawSpec {
@@ -50,9 +75,13 @@ struct RawSpec {
     stream: Stream,
     timeout: Option<String>,
     #[serde(default)]
+    expect_exit: ExpectExit,
+    #[serde(default)]
     kernel: RawKernel,
     #[serde(default)]
     expect: Vec<RawExpect>,
+    #[serde(default)]
+    reject: Vec<RawExpect>,
 }
 
 #[derive(Deserialize, Default)]
@@ -74,8 +103,10 @@ pub struct Spec {
     pub cmdline: String,
     pub stream: Stream,
     pub timeout: Duration,
+    pub expect_exit: ExpectExit,
     pub features: Vec<String>,
     pub expect: Vec<Regex>,
+    pub reject: Vec<Regex>,
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -99,21 +130,17 @@ impl Spec {
             Some(t) => parse_duration(&t).map_err(|e| format!("timeout: {e}"))?,
             None => DEFAULT_TIMEOUT,
         };
-        let expect = raw
-            .expect
-            .iter()
-            .enumerate()
-            .map(|(i, e)| {
-                Regex::new(&e.re).map_err(|err| format!("expect #{}: bad regex: {err}", i + 1))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let expect = compile(&raw.expect, "expect")?;
+        let reject = compile(&raw.reject, "reject")?;
 
         Ok(Spec {
             cmdline: raw.cmdline,
             stream: raw.stream,
             timeout,
+            expect_exit: raw.expect_exit,
             features: raw.kernel.features,
             expect,
+            reject,
         })
     }
 
@@ -121,6 +148,15 @@ impl Spec {
     pub fn kernel_cmdline(&self) -> String {
         format!("gate {}", self.cmdline).trim_end().to_string()
     }
+}
+
+fn compile(list: &[RawExpect], what: &str) -> Result<Vec<Regex>, String> {
+    list.iter()
+        .enumerate()
+        .map(|(i, e)| {
+            Regex::new(&e.re).map_err(|err| format!("{what} #{}: bad regex: {err}", i + 1))
+        })
+        .collect()
 }
 
 /// Parse `500ms`, `20s` or `2m`.
@@ -169,8 +205,28 @@ re = 'limine: rev=3'
     }
 
     #[test]
+    fn expect_exit() {
+        let s = Spec::parse(
+            "name = \"x\"\nexpect_exit = \"failure\"\n[[expect]]\nre = 'y'\n",
+            "x",
+        )
+        .unwrap();
+        assert_eq!(s.expect_exit, ExpectExit::Failure);
+        assert_eq!(s.expect_exit.qemu_status(), 35);
+        assert_eq!(ExpectExit::Success.qemu_status(), 33);
+        assert!(
+            Spec::parse(
+                "name = \"x\"\nexpect_exit = \"maybe\"\n[[expect]]\nre = 'y'\n",
+                "x"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn defaults() {
         let s = Spec::parse("name = \"x\"\n[[expect]]\nre = 'y'\n", "x").unwrap();
+        assert_eq!(s.expect_exit, ExpectExit::Success);
         assert_eq!(s.stream, Stream::Com2);
         assert_eq!(s.timeout, DEFAULT_TIMEOUT);
         assert!(s.features.is_empty());
@@ -209,6 +265,22 @@ re = 'limine: rev=3'
         )
         .unwrap_err();
         assert!(e.contains("expect #2"), "{e}");
+    }
+
+    #[test]
+    fn rejects_are_parsed() {
+        let s = Spec::parse(
+            "name = \"x\"\n[[expect]]\nre = 'y'\n[[reject]]\nre = 'INFO'\n",
+            "x",
+        )
+        .unwrap();
+        assert_eq!(s.reject.len(), 1);
+        let e = Spec::parse(
+            "name = \"x\"\n[[expect]]\nre = 'y'\n[[reject]]\nre = '['\n",
+            "x",
+        )
+        .unwrap_err();
+        assert!(e.contains("reject #1"), "{e}");
     }
 
     #[test]

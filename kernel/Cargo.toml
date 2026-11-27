@@ -13,3 +13,9 @@ bench = false
 # Pinned to 0.5.0: 0.6.x needs nightly (`#![feature(ptr_metadata)]`).
 # 0.5.0 speaks Limine base revision 3, which Limine v12 still supports on x86_64.
 limine = "=0.5.0"
+# Spinlock around the UARTs (and, from 0.4, the kernel's SpinLock type).
+spin = { version = "=0.12.3", default-features = false, features = ["spin_mutex"] }
+
+[features]
+# Test scenarios, enabled per gate (tests/gates/*.toml `[kernel] features`).
+test-panic = []

@@ -10,11 +10,14 @@ The near-term goal is a QEMU virtual machine that boots to a shell, runs C progr
 
 ## Current status
 
-**Latest phase: [0.2 — Gate harness](docs/roadmap/phase-0.2-gate-harness.md)** · Milestone M0 (It boots)
+**Latest phase: [0.3 — Kernel logging, panic, backtrace](docs/roadmap/phase-0.3-logging-panic-backtrace.md)** · Milestone M0 (It boots)
 
-- The kernel boots under Limine at a random address on each boot (KASLR), prints its boot line on the serial port, and halts.
-- `cargo xtask gate` boots it automatically, checks the output, and reports PASS or FAIL. Every later phase adds a gate here.
-- There is no shell yet. That arrives in milestone M5.
+- **Boot:** the kernel boots under Limine at a random address on each boot (KASLR), and halts.
+- **Logging:** it logs to two serial ports. The console (your terminal) shows the boot line and any warnings; the full timestamped log goes to `target/aos-log.txt`.
+- **Panics:** a kernel panic prints its location and a backtrace, and `cargo xtask symbolize` turns that backtrace into function names and source lines.
+- **Debugging:** `cargo xtask gdb` attaches GDB with the kernel's symbols already loaded.
+- **Automated checks:** `cargo xtask gate --all` boots every test scenario and reports PASS or FAIL.
+- **Not yet:** there is no shell. That arrives in milestone M5.
 
 ## Prerequisites
 
@@ -26,6 +29,8 @@ Developed on Fedora (x86_64). You need:
 | `qemu-system-x86_64` | Running aOS | `qemu-system-x86` |
 | `xorriso` | Building the boot ISO | `xorriso` |
 | `curl`, `tar`, `sha256sum`, `make`, `cc` | Fetching and preparing the pinned Limine bootloader | usually preinstalled; `gcc` or `clang` for `cc` |
+| `addr2line` | Turning backtrace addresses into function names (`xtask symbolize`, gates) | `binutils` |
+| `gdb` | Kernel debugging (`xtask gdb`), optional | `gdb` |
 
 For KVM acceleration your user needs access to `/dev/kvm`. Without it, use `--tcg`, described below.
 
@@ -41,15 +46,28 @@ cargo xtask run
 
 The first run takes longer. It installs the pinned Rust toolchain (from `rust-toolchain.toml`) and downloads the Limine bootloader into `target/limine/`, checking its SHA-256.
 
-### What you should see (phase 0.2)
+### What you should see (phase 0.3)
+
+In your terminal (COM1, the console):
 
 ```text
 xtask: booting .../target/aos.iso (Ctrl-C to quit)
-aOS kernel 0.1.0 base=0xffffffffe8485000 phys=0x1fe2c000
-limine: rev=3 hhdm=yes memmap=yes modules=no framebuffer=yes rsdp=yes cmdline=""
+xtask: full kernel log: .../target/aos-log.txt (`tail -f` it)
+aOS kernel 0.1.0 base=0xffffffffdb2ff000 phys=0x1fdfd000
 ```
 
 The kernel then halts on purpose. **Press Ctrl-C to quit QEMU.** Run it again and the `base=` address changes: that's KASLR.
+
+In `target/aos-log.txt` (COM2, the full log; watch it live with `tail -f target/aos-log.txt` in another terminal):
+
+```text
+[     3] INFO  kernel: aOS kernel 0.1.0 base=0xffffffffdb2ff000 phys=0x1fdfd000
+[    11] INFO  kernel: slide=0x5b2ff000
+[    14] INFO  kernel: limine: rev=3 hhdm=yes memmap=yes modules=no framebuffer=yes rsdp=yes cmdline=""
+[    23] INFO  kernel: time: tsc ~1000 MHz (fallback guess, uncalibrated until phase 1.4)
+```
+
+The `[ms]` timestamps are approximate until phase 1.4 calibrates the clock. To see a panic with a symbolized backtrace, run `cargo xtask gate panic`.
 
 ### Check the latest phase automatically
 
@@ -61,9 +79,14 @@ cargo xtask check        # formatting, clippy and host unit tests
 Expected output:
 
 ```text
-[com1] aOS kernel 0.1.0 base=0xffffffffe8a55000 phys=0x1fe1d000
-[com1] limine: rev=3 hhdm=yes memmap=yes modules=no framebuffer=yes rsdp=yes cmdline="gate"
-gate smoke: PASS (0.6s)
+gate console: PASS (0.4s)
+kernel backtrace (symbolized):
+  #0  0xffffffffc69bed5c __rustc::rust_begin_unwind (kernel/src/panic.rs:38)
+  ...
+  #7  0xffffffffc69bc746 kernel::kernel_main (kernel/src/main.rs:67)
+  #8  0xffffffffc69bf001 kmain (kernel/src/arch/x86_64/boot.rs:91)
+gate panic: PASS (0.5s)
+gate smoke: PASS (0.5s)
 ...
 check: all passed
 ```
@@ -76,29 +99,33 @@ A failing gate prints the expectation it was waiting for, why QEMU stopped, and 
 | --- | --- |
 | `cargo xtask build` | Build the kernel (`target/x86_64-unknown-none/debug/kernel`) |
 | `cargo xtask image` | Build the kernel and pack `target/aos.iso` |
-| `cargo xtask run` | Build the image and boot it in QEMU with KVM, serial output in your terminal |
+| `cargo xtask run` | Build the image and boot it in QEMU with KVM: console in your terminal, full log in `target/aos-log.txt` |
 | `cargo xtask run --release` | Same, with an optimized build |
 | `cargo xtask run --tcg` | Software emulation, logging every interrupt to `target/qemu-int.log` (for triple faults) |
-| `cargo xtask run --gdb` | Start paused with a GDB stub on `localhost:1234` |
+| `cargo xtask run --gdb` | Start paused with a GDB stub on `localhost:1234`, with KASLR off |
 | `cargo xtask run -- <args>` | Pass extra arguments to QEMU, e.g. `-- -m 128M` |
 | `cargo xtask gate <name>` | Boot under `tests/gates/<name>.toml` and check its expected output (add `--tcg` without KVM) |
 | `cargo xtask gate --all` | Run every gate. A phase is only done when all of them pass |
 | `cargo xtask check` | `cargo fmt --check`, clippy with `-D warnings`, and host unit tests |
+| `cargo xtask symbolize [LOG]` | Resolve the `bt:` addresses in a kernel log (default `target/aos-log.txt`) to functions and lines; `--elf PATH` picks the kernel build |
+| `cargo xtask gdb` | Attach GDB to a running `cargo xtask run --gdb`, with symbols loaded and a breakpoint on `kernel_main` |
 
 ### Debugging with GDB
 
 ```sh
-cargo xtask run --gdb          # terminal 1: QEMU waits for a debugger
-gdb target/x86_64-unknown-none/debug/kernel -ex 'target remote :1234'   # terminal 2
+cargo xtask run --gdb    # terminal 1: QEMU waits for a debugger, KASLR off
+cargo xtask gdb          # terminal 2: type `continue` to stop at kernel_main
 ```
 
-Because of KASLR, the kernel's symbols are offset by the slide printed at boot. Phase 0.3 adds `cargo xtask gdb`, which handles that automatically. Until then, add `kaslr: no` to [boot/limine.conf](boot/limine.conf) to make the addresses match the ELF.
+`run --gdb` turns KASLR off, so the ELF's symbols match exactly.
+
+To debug a normal randomized boot instead, run `cargo xtask run -- -s` (a GDB stub without pausing), wait for the boot line, then run `cargo xtask gdb`. It reads the KASLR slide from `target/aos-log.txt` and loads the symbols at that offset.
 
 ## Repository layout
 
 ```text
 kernel/        the microkernel (Rust, no_std, x86_64-unknown-none, PIE)
-xtask/         build and test tooling: cargo xtask build | image | run | gate | check
+xtask/         build and test tooling: cargo xtask build | image | run | gate | check | symbolize | gdb
 boot/          limine.conf (later: services.toml)
 tests/gates/   automated phase checks, one TOML spec per gate
 docs/          design, roadmap, per-phase explainer notes
