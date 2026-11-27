@@ -1,0 +1,7 @@
+# Stable Rust only (see the Decision log in docs/design.md).
+# Bump deliberately, in its own PR.
+[toolchain]
+channel = "1.98.1"
+targets = ["x86_64-unknown-none"]
+components = ["rustfmt", "clippy", "llvm-tools"]
+profile = "minimal"

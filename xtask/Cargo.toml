@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+description = "Build, image and run tooling for aOS (cargo xtask ...)"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# No dependencies on purpose: xtask shells out to standard host tools
+# (curl, tar, sha256sum, make, xorriso, qemu-system-x86_64).
+[dependencies]

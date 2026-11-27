@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["kernel", "xtask"]
+# Plain `cargo build` / `cargo run` at the root only touch host crates.
+# Target crates (the kernel, later services) are built by `cargo xtask`.
+default-members = ["xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+# Keep DWARF in release builds too: backtraces are symbolized from it (phase 0.3).
+debug = true
