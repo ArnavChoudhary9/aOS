@@ -10,9 +10,11 @@ The near-term goal is a QEMU virtual machine that boots to a shell, runs C progr
 
 ## Current status
 
-**Latest phase: [0.1 — Workspace, xtask, Limine ISO](docs/roadmap/phase-0.1-workspace-xtask-limine.md)** · Milestone M0 (It boots)
+**Latest phase: [0.2 — Gate harness](docs/roadmap/phase-0.2-gate-harness.md)** · Milestone M0 (It boots)
 
-The kernel boots under Limine at a random address on each boot (KASLR), prints one line on the serial port, and halts. There is no shell yet. That arrives in milestone M5.
+- The kernel boots under Limine at a random address on each boot (KASLR), prints its boot line on the serial port, and halts.
+- `cargo xtask gate` boots it automatically, checks the output, and reports PASS or FAIL. Every later phase adds a gate here.
+- There is no shell yet. That arrives in milestone M5.
 
 ## Prerequisites
 
@@ -39,7 +41,7 @@ cargo xtask run
 
 The first run takes longer. It installs the pinned Rust toolchain (from `rust-toolchain.toml`) and downloads the Limine bootloader into `target/limine/`, checking its SHA-256.
 
-### What you should see (phase 0.1)
+### What you should see (phase 0.2)
 
 ```text
 xtask: booting .../target/aos.iso (Ctrl-C to quit)
@@ -48,6 +50,25 @@ limine: rev=3 hhdm=yes memmap=yes modules=no framebuffer=yes rsdp=yes cmdline=""
 ```
 
 The kernel then halts on purpose. **Press Ctrl-C to quit QEMU.** Run it again and the `base=` address changes: that's KASLR.
+
+### Check the latest phase automatically
+
+```sh
+cargo xtask gate --all   # boot every gate in tests/gates/ and check its output
+cargo xtask check        # formatting, clippy and host unit tests
+```
+
+Expected output:
+
+```text
+[com1] aOS kernel 0.1.0 base=0xffffffffe8a55000 phys=0x1fe1d000
+[com1] limine: rev=3 hhdm=yes memmap=yes modules=no framebuffer=yes rsdp=yes cmdline="gate"
+gate smoke: PASS (0.6s)
+...
+check: all passed
+```
+
+A failing gate prints the expectation it was waiting for, why QEMU stopped, and the last 40 log lines. Full logs stay in `target/gates/<name>/`.
 
 ### Commands
 
@@ -60,6 +81,9 @@ The kernel then halts on purpose. **Press Ctrl-C to quit QEMU.** Run it again an
 | `cargo xtask run --tcg` | Software emulation, logging every interrupt to `target/qemu-int.log` (for triple faults) |
 | `cargo xtask run --gdb` | Start paused with a GDB stub on `localhost:1234` |
 | `cargo xtask run -- <args>` | Pass extra arguments to QEMU, e.g. `-- -m 128M` |
+| `cargo xtask gate <name>` | Boot under `tests/gates/<name>.toml` and check its expected output (add `--tcg` without KVM) |
+| `cargo xtask gate --all` | Run every gate. A phase is only done when all of them pass |
+| `cargo xtask check` | `cargo fmt --check`, clippy with `-D warnings`, and host unit tests |
 
 ### Debugging with GDB
 
@@ -74,13 +98,14 @@ Because of KASLR, the kernel's symbols are offset by the slide printed at boot. 
 
 ```text
 kernel/        the microkernel (Rust, no_std, x86_64-unknown-none, PIE)
-xtask/         build tooling: cargo xtask build | image | run
+xtask/         build and test tooling: cargo xtask build | image | run | gate | check
 boot/          limine.conf (later: services.toml)
+tests/gates/   automated phase checks, one TOML spec per gate
 docs/          design, roadmap, per-phase explainer notes
 ```
 
-Later phases add `libs/` (shared crates), `services/` (drivers and system services), `apps/` (shell and programs), `c/` (C runtime and TinyCC), and `tests/gates/` (automated phase checks). The [roadmap](docs/roadmap/README.md#status) tracks progress.
+Later phases add `libs/` (shared crates), `services/` (drivers and system services), `apps/` (shell and programs), and `c/` (C runtime and TinyCC). The [roadmap](docs/roadmap/README.md#status) tracks progress.
 
 ## How development works
 
-Each roadmap phase is built on its own branch `phase/<id>-<slug>` and opened as a pull request. A phase includes an automated gate (from phase 0.2), a manual checklist, and an explainer note. It merges into `main` once it has been verified by hand. This README's **Current status** and **What you should see** sections are updated by every phase.
+Each roadmap phase is built on its own branch `phase/<id>-<slug>` and opened as a pull request. A phase includes an automated gate (`cargo xtask gate`), a manual checklist, and an explainer note. It merges into `main` once it has been verified by hand. This README's **Current status** and **What you should see** sections are updated by every phase.

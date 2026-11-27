@@ -1,15 +1,13 @@
-//! `cargo xtask <command>`: the one entry point for building and running aOS.
-//!
-//! Commands (phase 0.1):
-//!   build [--release]                       build the kernel
-//!   image [--release]                       build + pack a BIOS-bootable Limine ISO
-//!   run   [--release] [--tcg] [--gdb] [-- <extra qemu args>]
-//!                                           build the image and boot it in QEMU
+//! `cargo xtask <command>`: the one entry point for building, running and
+//! testing aOS. Run `cargo xtask --help` for the command list.
 
+mod check;
 mod cmd;
+mod gate;
 mod image;
 mod kbuild;
 mod limine;
+mod qemu;
 mod run;
 
 use std::path::PathBuf;
@@ -23,6 +21,9 @@ pub struct Opts {
     pub release: bool,
     pub tcg: bool,
     pub gdb: bool,
+    pub all: bool,
+    /// Positional arguments (gate names).
+    pub args: Vec<String>,
     pub qemu_extra: Vec<String>,
 }
 
@@ -30,14 +31,19 @@ const USAGE: &str = "\
 usage: cargo xtask <command> [options]
 
 commands:
-  build    build the kernel
-  image    build the kernel and pack target/aos.iso
-  run      build the image and boot it in QEMU (Ctrl-C to quit)
+  build             build the kernel
+  image             build the kernel and pack target/aos.iso
+  run               build the image and boot it in QEMU (Ctrl-C to quit)
+  gate <name>...    boot each tests/gates/<name>.toml and check its expectations
+  gate --all        run every gate in tests/gates/
+  check             cargo fmt --check, clippy -D warnings, host unit tests
 
 options:
   --release   optimized build
-  --tcg       (run) software emulation with interrupt logging to target/qemu-int.log
+  --tcg       (run, gate) software emulation instead of KVM;
+              `run --tcg` also logs every interrupt to target/qemu-int.log
   --gdb       (run) start paused with a GDB stub on localhost:1234
+  --all       (gate) run every gate
   -- ARGS     (run) pass the remaining arguments to QEMU
 ";
 
@@ -54,22 +60,34 @@ fn main() -> ExitCode {
             "--release" => opts.release = true,
             "--tcg" => opts.tcg = true,
             "--gdb" => opts.gdb = true,
+            "--all" => opts.all = true,
             "--" => opts.qemu_extra.extend(args.by_ref()),
             "-h" | "--help" => {
                 print!("{USAGE}");
                 return ExitCode::SUCCESS;
             }
-            other => {
+            other if other.starts_with('-') => {
                 eprintln!("xtask: unknown option `{other}`\n\n{USAGE}");
                 return ExitCode::FAILURE;
             }
+            other => opts.args.push(other.to_string()),
         }
     }
 
+    if command != "gate" && !opts.args.is_empty() {
+        eprintln!(
+            "xtask: `{command}` takes no arguments, got `{}`",
+            opts.args.join(" ")
+        );
+        return ExitCode::FAILURE;
+    }
+
     let result = match command.as_str() {
-        "build" => kbuild::build_kernel(&opts).map(|_| ()),
+        "build" => kbuild::build_kernel(&opts, &[]).map(|_| ()),
         "image" => image::build_iso(&opts).map(|_| ()),
         "run" => run::run(&opts),
+        "gate" => gate::main(&opts),
+        "check" => check::check(),
         "-h" | "--help" | "help" => {
             print!("{USAGE}");
             Ok(())
