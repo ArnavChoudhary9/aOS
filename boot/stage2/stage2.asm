@@ -10,12 +10,20 @@ extern enable_a20
 extern detect_memory
 extern load_gdt
 extern vga_init
+extern vga_putchar
+extern vga_print_string
+extern vga_newline
 extern pic_init
 extern pic_set_mask
 extern load_idt
+extern timer_init
+extern kbd_init
+extern kbd_getchar
+extern ata_read_sectors
 extern dbg_ok
 extern dbg_err
 extern dbg_info
+extern dbg_hex8
 
 section .text
 
@@ -31,15 +39,14 @@ stage2_start:
     call detect_memory
     jc .memory_error
 
-    ; Real-mode setup done — disable interrupts and enter protected mode
     cli
     call load_gdt
 
     mov eax, cr0
-    or eax, 1              ; set PE (Protection Enable)
+    or eax, 1
     mov cr0, eax
 
-    jmp 0x08:pm32_start    ; far jump: flush pipeline, load CS = code selector (0x08)
+    jmp 0x08:pm32_start
 
 .a20_error:
     mov si, msg_a20_error
@@ -66,37 +73,34 @@ bits 32
 section .text
 
 pm32_start:
-    ; Reload data segment registers with the flat data selector (0x10).
-    ; CS was already loaded by the far jump with the code selector (0x08).
     mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, 0x9FC00        ; stack top just below the EBDA at 0xA0000
+    mov esp, 0x9FC00
 
-    cld                     ; string ops scan forward
+    cld
 
-    call vga_init           ; clear screen, reset cursor and color
+    call vga_init
 
-    ; Remap PIC before loading the IDT — ICW sequences leave the PIC in an
-    ; undefined mask state, so we remap first, then fill the IDT, then unmask.
-    mov al, 0x20            ; master IRQ0-7  → vectors 32-39
-    mov ah, 0x28            ; slave  IRQ8-15 → vectors 40-47
-    call pic_init
+    ; ── Interrupt infrastructure ──────────────────────────────────────────────
+    mov al, 0x20
+    mov ah, 0x28
+    call pic_init               ; remap PIC: IRQ0-7 → 32-39, IRQ8-15 → 40-47
 
-    ; Install exception stubs (0-31) and IRQ stubs (32-47), load IDTR.
-    call load_idt
+    call load_idt               ; install exception stubs (0-31) + IRQ stubs (32-47)
 
-    ; Unmask all IRQs on both PICs, then enable CPU interrupt delivery.
-    ; Every IRQ has a handler (irq_common → pic_eoi → iret), so no vector
-    ; is left without a gate.
-    mov al, 0x00            ; master mask: all IRQs unmasked
-    mov ah, 0x00            ; slave  mask: all IRQs unmasked
-    call pic_set_mask
-    sti
+    call timer_init             ; program PIT → 100 Hz, install IRQ0 handler
+    call kbd_init               ; install IRQ1 handler
 
+    mov al, 0x00
+    mov ah, 0x00
+    call pic_set_mask           ; unmask all IRQs
+    sti                         ; enable CPU interrupt delivery
+
+    ; ── Boot status ───────────────────────────────────────────────────────────
     mov esi, msg32_banner
     call dbg_info
 
@@ -112,18 +116,63 @@ pm32_start:
     mov esi, msg32_pic
     call dbg_ok
 
-    mov esi, msg32_sti
+    mov esi, msg32_timer
     call dbg_ok
 
+    mov esi, msg32_kbd
+    call dbg_ok
+
+    ; ── ATA demo: read sector 0 and verify the boot signature ─────────────────
+    mov eax, 0                  ; LBA 0 = first sector (boot sector)
+    mov ecx, 1                  ; 1 sector
+    mov edi, 0x20000            ; scratch buffer at 128 KB (safe, unused RAM)
+    call ata_read_sectors
+    jc .ata_err
+
+    cmp word [0x20000 + 510], 0xAA55
+    jne .ata_bad_sig
+
+    mov esi, msg32_ata_ok
+    call dbg_ok
+    jmp .kbd_demo
+
+.ata_err:
+    mov esi, msg32_ata_err
+    call dbg_err
+    jmp .kbd_demo
+
+.ata_bad_sig:
+    mov esi, msg32_ata_sig
+    call dbg_err
+
+    ; ── Keyboard echo loop ────────────────────────────────────────────────────
+    ; After setup, drop into a simple interactive prompt.
+    ; The timer handler keeps the tick counter live in the top-right corner.
+.kbd_demo:
+    mov esi, msg32_prompt
+    call dbg_info
+
 .hang:
-    hlt
+    hlt                         ; sleep until the next interrupt fires
+
+    call kbd_getchar            ; any key in the buffer?
+    test al, al
+    jz .hang                    ; no — sleep again
+
+    call vga_putchar            ; echo the character (backspace handled in vga_putchar)
     jmp .hang
+
 
 section .data
 
-msg32_banner: db "aOS | 32-bit Protected Mode", 0
-msg32_a20:    db "A20 line enabled", 0
-msg32_mem:    db "E820 memory map detected", 0
-msg32_idt:    db "IDT loaded (vectors 0-47)", 0
-msg32_pic:    db "PIC remapped (IRQ0-7=0x20, IRQ8-15=0x28)", 0
-msg32_sti:    db "Interrupts enabled", 0
+msg32_banner:  db "aOS | 32-bit Protected Mode", 0
+msg32_a20:     db "A20 line enabled", 0
+msg32_mem:     db "E820 memory map detected", 0
+msg32_idt:     db "IDT loaded (vectors 0-47)", 0
+msg32_pic:     db "PIC remapped (IRQ0-7=0x20, IRQ8-15=0x28)", 0
+msg32_timer:   db "Timer @ 100 Hz (tick counter top-right)", 0
+msg32_kbd:     db "Keyboard driver ready", 0
+msg32_ata_ok:  db "ATA: boot signature 0xAA55 verified", 0
+msg32_ata_err: db "ATA: read failed (check QEMU -if=ide)", 0
+msg32_ata_sig: db "ATA: boot signature not found", 0
+msg32_prompt:  db "Ready - type something (Backspace supported):", 0

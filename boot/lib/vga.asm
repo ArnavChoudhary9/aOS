@@ -47,6 +47,8 @@ vga_putchar:
     push eax
     push edi
 
+    cmp al, 0x08
+    je .bs
     cmp al, 0x0D
     je .cr
     cmp al, 0x0A
@@ -67,6 +69,29 @@ vga_putchar:
     mov dword [vga_col], 0
     inc dword [vga_row]
     jmp .scroll_check
+
+.bs:
+    ; Move cursor one cell back (wrapping to the previous row if at column 0),
+    ; overwrite that cell with a space, and leave the cursor there.
+    cmp dword [vga_col], 0
+    jne .bs_same_row
+    cmp dword [vga_row], 0
+    je .update              ; already at (0,0) — nothing to delete
+    dec dword [vga_row]
+    mov dword [vga_col], VGA_COLS - 1
+    jmp .bs_erase
+.bs_same_row:
+    dec dword [vga_col]
+.bs_erase:
+    movzx edi, byte [vga_row]
+    imul edi, VGA_COLS
+    add edi, [vga_col]
+    shl edi, 1
+    add edi, VGA_BASE
+    mov ah, [vga_attr]
+    mov al, ' '
+    mov [edi], ax
+    jmp .update
 
 .lf:
     inc dword [vga_row]     ; LF: advance row, fall through to reset column
