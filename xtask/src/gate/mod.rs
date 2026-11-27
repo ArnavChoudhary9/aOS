@@ -6,8 +6,12 @@
 //!
 //! A gate passes when every expectation matches in order on the chosen
 //! serial stream **and** the guest exits QEMU through `isa-debug-exit` with
-//! the success code (QEMU status 33). A timeout, an early exit, or any other
+//! the expected code: success (QEMU status 33) unless the spec says
+//! `expect_exit = "failure"` (35). A timeout, an early exit, or any other
 //! status is a failure.
+//!
+//! If the COM2 log contains a kernel backtrace (`bt:` lines), it is
+//! symbolized against the gate's kernel ELF and printed after the result.
 
 mod matcher;
 mod spec;
@@ -26,7 +30,7 @@ use std::time::{Duration, Instant};
 use matcher::Matcher;
 use spec::{Spec, Stream};
 
-use crate::{Opts, Result, cmd, image, kbuild, qemu, root, target_dir};
+use crate::{Opts, Result, cmd, image, kbuild, qemu, root, symbolize, target_dir};
 
 /// QEMU exit status when the guest writes 0x10 to isa-debug-exit.
 const QEMU_SUCCESS: i32 = (0x10 << 1) | 1;
@@ -155,7 +159,25 @@ fn run_gate(name: &str, opts: &Opts) -> Result {
         state.push(&spec, stream, &line);
     }
 
+    print_backtrace(&com2_log, &kernel);
     judge(&spec, &state, run.end, &work, &stderr_log)
+}
+
+/// Print a symbolized backtrace if the kernel logged one.
+fn print_backtrace(com2_log: &Path, kernel: &Path) {
+    let Ok(log) = std::fs::read_to_string(com2_log) else {
+        return;
+    };
+    match symbolize::symbolize(&log, kernel) {
+        Ok(frames) if !frames.is_empty() => {
+            eprintln!(
+                "kernel backtrace (symbolized):\n{}",
+                symbolize::format(&frames).trim_end()
+            );
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("kernel backtrace: could not symbolize: {e}"),
+    }
 }
 
 /// Lines seen on the gate's stream, plus matcher progress.
@@ -163,6 +185,8 @@ struct State<'a> {
     matcher: Matcher<'a>,
     tail: VecDeque<String>,
     lines: usize,
+    /// The first line that matched a `[[reject]]` pattern, and the pattern.
+    rejected: Option<(String, String)>,
 }
 
 impl<'a> State<'a> {
@@ -171,6 +195,11 @@ impl<'a> State<'a> {
             return;
         }
         self.matcher.feed(line);
+        if self.rejected.is_none()
+            && let Some(re) = spec.reject.iter().find(|re| re.is_match(line))
+        {
+            self.rejected = Some((line.to_string(), re.as_str().to_string()));
+        }
         self.lines += 1;
         if self.tail.len() == TAIL_LINES {
             self.tail.pop_front();
@@ -196,6 +225,7 @@ fn watch<'a>(spec: &'a Spec, child: &mut Child, rx: &Receiver<(Stream, String)>)
         matcher: Matcher::new(&spec.expect),
         tail: VecDeque::new(),
         lines: 0,
+        rejected: None,
     };
     loop {
         if let Ok(Some(status)) = child.try_wait() {
@@ -222,12 +252,19 @@ fn watch<'a>(spec: &'a Spec, child: &mut Child, rx: &Receiver<(Stream, String)>)
 }
 
 fn judge(spec: &Spec, state: &State, end: End, work: &Path, stderr_log: &Path) -> Result {
-    let exit_ok = matches!(&end, End::Exited(s) if s.code() == Some(QEMU_SUCCESS));
-    if exit_ok && state.matcher.done() {
+    let expected = spec.expect_exit.qemu_status();
+    let exit_ok = matches!(&end, End::Exited(s) if s.code() == Some(expected));
+    if exit_ok && state.matcher.done() && state.rejected.is_none() {
         return Ok(());
     }
 
     let mut report = String::new();
+    if let Some((line, re)) = &state.rejected {
+        report.push_str(&format!(
+            "  rejected line on {} matches /{re}/:\n    | {line}\n",
+            spec.stream.name()
+        ));
+    }
     if let Some((index, re)) = state.matcher.pending() {
         report.push_str(&format!(
             "  unmatched: expect #{index} of {} on {} ({} matched): /{}/\n",
@@ -242,12 +279,20 @@ fn judge(spec: &Spec, state: &State, end: End, work: &Path, stderr_log: &Path) -
             "  QEMU still running after {:?}; killed (timeout)\n",
             spec.timeout
         ),
-        End::Exited(s) => match s.code() {
-            Some(QEMU_SUCCESS) => "  QEMU exit: success (33)\n".to_string(),
-            Some(QEMU_FAILURE) => "  QEMU exit: 35 (the kernel reported failure)\n".to_string(),
-            Some(c) => format!("  QEMU exit: {c} (expected 33: did the kernel call qemu_exit?)\n"),
-            None => format!("  QEMU exit: {s}\n"),
-        },
+        End::Exited(s) => {
+            let what = match s.code() {
+                Some(QEMU_SUCCESS) => "33 (the kernel reported success)".to_string(),
+                Some(QEMU_FAILURE) => "35 (the kernel reported failure)".to_string(),
+                Some(c) => format!("{c} (did the kernel call qemu_exit?)"),
+                None => s.to_string(),
+            };
+            let verdict = if exit_ok { "as expected" } else { "expected" };
+            if exit_ok {
+                format!("  QEMU exit: {what}, {verdict}\n")
+            } else {
+                format!("  QEMU exit: {what}; {verdict} {expected}\n")
+            }
+        }
     });
 
     report.push_str(&format!(

@@ -486,6 +486,11 @@ Recorded by the phase that made them.
 | 0.1 | Toolchain pinned to **1.98.1** | The installed stable at the time |
 | 0.2 | Gate logs are always kept in `target/gates/<name>/` (no `--keep` flag), and per-gate ISOs are rebuilt rather than cached | Packing takes under a second, and keeping logs is what you want after a failure |
 | 0.2 | The kernel panic handler exits QEMU with `Failure` from 0.2 on (the spec had it in 0.3) | Otherwise a panicking gate waits out its full timeout |
+| 0.3 | Backtraces are symbolized with GNU `addr2line` (binutils), not the `addr2line`/`object` crates | rustup's `llvm-tools` lacks `llvm-addr2line`; binutils is standard on Linux and keeps xtask's dependencies small |
+| 0.3 | `kprintln!` is a console line: printed as-is on COM1, logged at INFO on COM2. Other INFO lines go to COM2 only | The boot banner stays visible in the terminal without INFO noise; the `console` gate enforces it |
+| 0.3 | `cargo xtask run --gdb` boots with KASLR off; `xtask gdb` uses a hardware breakpoint | Symbols match from the first instruction, and a software breakpoint can't be planted before the kernel is mapped |
+| 0.3 | Log timestamps use a cpuid-estimated TSC frequency (falling back to 1 GHz) until 1.4 | Calibration needs the PIT and APIC, which come in 1.4 |
+| 0.3 | Gate specs gain `[[reject]]` patterns | Needed to assert that INFO lines stay off the console |
 
 ### Host prerequisites
 

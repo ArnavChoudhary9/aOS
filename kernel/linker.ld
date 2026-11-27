@@ -36,7 +36,9 @@ SECTIONS
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
     .text : {
+        __text_start = .;
         *(.text .text.*)
+        __text_end = .;
     } :text
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));

@@ -1,0 +1,10 @@
+# Phase 0.3: `log=debug` on the kernel cmdline enables DEBUG lines on COM2.
+name = "loglevel"
+cmdline = "log=debug"
+timeout = "20s"
+
+[[expect]]
+re = 'DEBUG kernel: debug logging enabled$'
+
+[[expect]]
+re = 'INFO  kernel: gate: boot finished$'

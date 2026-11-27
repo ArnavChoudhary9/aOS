@@ -1,0 +1,12 @@
+# Phase 0.3: COM1 (the console) shows the boot line as a plain console line
+# but not INFO log lines, which only go to COM2.
+name = "console"
+stream = "com1"
+timeout = "20s"
+
+[[expect]]
+re = '^aOS kernel \d+\.\d+\.\d+ base=0xffffffff[0-9a-f]{8} phys=0x[0-9a-f]+$'
+
+# INFO log lines belong on COM2 only.
+[[reject]]
+re = 'INFO  kernel:'

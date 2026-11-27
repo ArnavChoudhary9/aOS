@@ -51,11 +51,20 @@ send  = "crash serial"
 [[expect]]                                  # ordered regexes matched on COM2 (full log)
 re = "ping-pong: 1000 round trips"
 
+[[reject]]                                  # any matching line fails the gate (from 0.3)
+re = "PANIC"
+
 [post]                                      # optional host-side checks after QEMU exits
 run = ["fsck.vfat -n target/disk.img"]
 ```
 
-The run passes when every `expect` line matches in order, QEMU exits through `isa-debug-exit` with the success code (the guest writes `0x10`, so QEMU exits with 33), and every `post` command succeeds. A timeout counts as a failure, and the harness then prints the last 40 lines of COM2.
+The run passes when:
+- every `expect` line matches in order;
+- no line matches a `reject` pattern;
+- QEMU exits through `isa-debug-exit` with the expected code. That is success by default (the guest writes `0x10`, so QEMU exits with 33), or `expect_exit = "failure"` (35) for gates that panic on purpose;
+- every `post` command succeeds.
+
+If the log contains a kernel backtrace, the harness prints it symbolized. A timeout counts as a failure, and the harness then prints the last 40 lines of COM2.
 
 ## Conventions shared by all phases
 
@@ -100,8 +109,8 @@ What docs/phases/X.Y.md must cover beyond the standard sections.
 | --- | --- | --- |
 | **M0** | **It boots** | |
 | 0.1 | [Workspace, xtask, Limine ISO](phase-0.1-workspace-xtask-limine.md) | done |
-| 0.2 | [Gate harness](phase-0.2-gate-harness.md) | in review |
-| 0.3 | [Kernel logging, panic, backtrace](phase-0.3-logging-panic-backtrace.md) | todo |
+| 0.2 | [Gate harness](phase-0.2-gate-harness.md) | done |
+| 0.3 | [Kernel logging, panic, backtrace](phase-0.3-logging-panic-backtrace.md) | in review |
 | 0.4 | [GDT, TSS, per-CPU](phase-0.4-gdt-tss-percpu.md) | todo |
 | 0.5 | [IDT and exception stubs](phase-0.5-idt-exceptions.md) | todo |
 | **M1** | **Threads and ring 3** | |

@@ -15,9 +15,13 @@ use crate::{Opts, Result, cmd, kbuild, limine, root, target_dir};
 
 /// Build the kernel and `target/aos.iso` with the stock `boot/limine.conf`.
 pub fn build_iso(opts: &Opts) -> Result<PathBuf> {
+    build_iso_with(opts, &read_limine_conf()?)
+}
+
+/// Build the kernel and `target/aos.iso` with the given `limine.conf` text.
+pub fn build_iso_with(opts: &Opts, limine_conf: &str) -> Result<PathBuf> {
     let kernel = kbuild::build_kernel(opts, &[])?;
-    let conf = read_limine_conf()?;
-    pack_iso(&kernel, &conf, &target_dir())
+    pack_iso(&kernel, limine_conf, &target_dir())
 }
 
 /// Pack `kernel` and `limine_conf` into `<work>/aos.iso`, staging files in
@@ -66,14 +70,20 @@ pub fn read_limine_conf() -> Result<String> {
 
 /// `conf` with the value of its (single) `cmdline:` option replaced.
 pub fn with_cmdline(conf: &str, cmdline: &str) -> Result<String> {
+    set_option(conf, "cmdline", cmdline)
+}
+
+/// `conf` with the value of its (single) `<key>:` option replaced.
+pub fn set_option(conf: &str, key: &str, value: &str) -> Result<String> {
+    let needle = format!("{key}:");
     let mut found = 0;
-    let mut out = String::with_capacity(conf.len() + cmdline.len());
+    let mut out = String::with_capacity(conf.len() + value.len());
     for line in conf.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("cmdline:") {
+        if trimmed.starts_with(&needle) {
             found += 1;
             let indent = &line[..line.len() - trimmed.len()];
-            out.push_str(format!("{indent}cmdline: {cmdline}").trim_end_matches(' '));
+            out.push_str(format!("{indent}{needle} {value}").trim_end_matches(' '));
         } else {
             out.push_str(line);
         }
@@ -82,7 +92,7 @@ pub fn with_cmdline(conf: &str, cmdline: &str) -> Result<String> {
     match found {
         1 => Ok(out),
         n => Err(format!(
-            "boot/limine.conf must contain exactly one `cmdline:` line, found {n}"
+            "boot/limine.conf must contain exactly one `{needle}` line, found {n}"
         )),
     }
 }
@@ -104,6 +114,15 @@ mod tests {
     fn empty_cmdline_has_no_trailing_space() {
         let out = with_cmdline(CONF, "").unwrap();
         assert!(out.contains("\n    cmdline:\n"), "{out:?}");
+    }
+
+    #[test]
+    fn sets_other_options() {
+        let conf = "/aOS\n    kaslr: yes\n";
+        assert_eq!(
+            super::set_option(conf, "kaslr", "no").unwrap(),
+            "/aOS\n    kaslr: no\n"
+        );
     }
 
     #[test]

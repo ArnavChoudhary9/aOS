@@ -1,0 +1,21 @@
+# Phase 0.3: a deliberate kernel panic prints its location and a
+# frame-pointer backtrace, then exits QEMU with the failure status. The
+# harness prints the backtrace symbolized.
+name = "panic"
+expect_exit = "failure"
+timeout = "20s"
+
+[kernel]
+features = ["test-panic"]
+
+[[expect]]
+re = 'ERROR kernel: PANIC at kernel/src/main\.rs:\d+:\d+: test-panic: deliberate panic$'
+
+[[expect]]
+re = 'ERROR kernel: bt: #0 0xffffffff[0-9a-f]{8}$'
+
+[[expect]]
+re = 'ERROR kernel: bt: #1 0xffffffff[0-9a-f]{8}$'
+
+[[expect]]
+re = 'ERROR kernel: bt: end \(([3-9]|[1-9]\d) frames\)$'
