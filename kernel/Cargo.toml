@@ -1,0 +1,15 @@
+[package]
+name = "kernel"
+description = "The aOS microkernel"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "kernel"
+test = false
+bench = false
+
+[dependencies]
+# Pinned to 0.5.0: 0.6.x needs nightly (`#![feature(ptr_metadata)]`).
+# 0.5.0 speaks Limine base revision 3, which Limine v12 still supports on x86_64.
+limine = "=0.5.0"

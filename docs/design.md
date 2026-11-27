@@ -474,6 +474,17 @@ Decisions settled during technical planning on 2026-11-27. Where a row says **ch
 - **Loader accepts two ELF kinds.** It loads static-PIE (ET_DYN) at a random base and ET_EXEC (TinyCC output) at its fixed address; stack and heap are randomized either way.
 - **Syscall additions** beyond the list above: `obj_create`, `cap_info`, `thread_info`, `thread_exit`, `reply`, `endpoint_close`, Frame sub-range split via `cap_mint`, and deadlines on `wait`/`recv`. That makes 25 syscalls; the canonical numbered list is in [phase 2.1](roadmap/phase-2.1-abi.md) and, once built, `libs/aos-abi`; "about 15" is a soft target and is not enforced.
 
+### Changes during implementation
+
+Recorded by the phase that made them.
+
+| Phase | Decision | Why |
+| --- | --- | --- |
+| 0.1 | `limine` crate pinned to **0.5.0** and Limine base revision **3** | 0.6.x needs nightly (`#![feature(ptr_metadata)]`). Limine v12 still accepts revision 3 on x86_64. Moving to revision 6 needs a stable-compatible crate or our own request bindings |
+| 0.1 | Limine **v12.9.6** (binary release, SHA-256 pinned in `xtask/src/limine.rs`) | Newest release older than two weeks at the time |
+| 0.1 | ISO boots through El Torito only; **no `limine bios-install`** on the ISO | bios-install only adds hybrid USB/HDD boot and refuses a BIOS-only ISO (no partition starting at sector 63 or later). It is used again when booting moves to a partitioned disk image (11.3) |
+| 0.1 | Toolchain pinned to **1.98.1** | The installed stable at the time |
+
 ### Host prerequisites
 
 Present on the dev machine: qemu 10.2, gdb, xorriso, mtools, mkfs.vfat, clang 22, lld, ninja, nasm, KVM. Install before M7: `sudo dnf install meson llvm` (meson and llvm-ar, for picolibc).
