@@ -99,8 +99,8 @@ What docs/phases/X.Y.md must cover beyond the standard sections.
 | ID | Phase | Status |
 | --- | --- | --- |
 | **M0** | **It boots** | |
-| 0.1 | [Workspace, xtask, Limine ISO](phase-0.1-workspace-xtask-limine.md) | in review |
-| 0.2 | [Gate harness](phase-0.2-gate-harness.md) | todo |
+| 0.1 | [Workspace, xtask, Limine ISO](phase-0.1-workspace-xtask-limine.md) | done |
+| 0.2 | [Gate harness](phase-0.2-gate-harness.md) | in review |
 | 0.3 | [Kernel logging, panic, backtrace](phase-0.3-logging-panic-backtrace.md) | todo |
 | 0.4 | [GDT, TSS, per-CPU](phase-0.4-gdt-tss-percpu.md) | todo |
 | 0.5 | [IDT and exception stubs](phase-0.5-idt-exceptions.md) | todo |

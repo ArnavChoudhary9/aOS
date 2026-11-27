@@ -27,3 +27,14 @@ pub unsafe fn inb(port: u16) -> u8 {
     };
     value
 }
+
+/// Write a 32-bit value to an I/O port.
+///
+/// # Safety
+/// Same contract as [`outb`].
+pub unsafe fn outl(port: u16, value: u32) {
+    // SAFETY: the caller upholds the contract above; `out` touches no memory.
+    unsafe {
+        asm!("out dx, eax", in("dx") port, in("eax") value, options(nomem, nostack, preserves_flags))
+    };
+}

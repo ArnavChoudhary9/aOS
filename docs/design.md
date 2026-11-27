@@ -484,6 +484,8 @@ Recorded by the phase that made them.
 | 0.1 | Limine **v12.9.6** (binary release, SHA-256 pinned in `xtask/src/limine.rs`) | Newest release older than two weeks at the time |
 | 0.1 | ISO boots through El Torito only; **no `limine bios-install`** on the ISO | bios-install only adds hybrid USB/HDD boot and refuses a BIOS-only ISO (no partition starting at sector 63 or later). It is used again when booting moves to a partitioned disk image (11.3) |
 | 0.1 | Toolchain pinned to **1.98.1** | The installed stable at the time |
+| 0.2 | Gate logs are always kept in `target/gates/<name>/` (no `--keep` flag), and per-gate ISOs are rebuilt rather than cached | Packing takes under a second, and keeping logs is what you want after a failure |
+| 0.2 | The kernel panic handler exits QEMU with `Failure` from 0.2 on (the spec had it in 0.3) | Otherwise a panicking gate waits out its full timeout |
 
 ### Host prerequisites
 

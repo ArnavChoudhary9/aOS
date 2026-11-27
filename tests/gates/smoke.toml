@@ -1,0 +1,11 @@
+# Phase 0.1/0.2 smoke test: the kernel boots under Limine with KASLR and
+# reports success to the harness.
+name = "smoke"
+stream = "com1"   # COM2 logging arrives in phase 0.3
+timeout = "20s"
+
+[[expect]]
+re = '^aOS kernel \d+\.\d+\.\d+ base=0xffffffff[0-9a-f]{8} phys=0x[0-9a-f]+$'
+
+[[expect]]
+re = '^limine: rev=3 .*cmdline="gate"$'
